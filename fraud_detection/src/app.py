@@ -15,6 +15,7 @@ from concurrent import futures
 
 # Create a class to define the server functions, derived from
 # fraud_detection_pb2_grpc.HelloServiceServicer
+
 class HelloService(fraud_detection_grpc.HelloServiceServicer):
     # Create an RPC function to say hello
     def SayHello(self, request, context):
@@ -26,6 +27,23 @@ class HelloService(fraud_detection_grpc.HelloServiceServicer):
         print(response.greeting)
         # Return the response object
         return response
+
+class FraudDetectionService(fraud_detection_grpc.FraudDetectionServiceServicer):
+
+    def CheckFraud(self, request, context):
+        card_number = request.card_number
+        order_amount = request.order_amount
+
+        print(f"Checking fraud for card: {card_number} and amount: {order_amount}")
+
+        # Dummy logic: Flag if amount > 1000 or card starts with 999
+        is_fraud = False
+        if order_amount > 1000 or card_number.startswith("999"):
+            is_fraud = True
+
+        return fraud_detection.FraudResponse(is_fraud=is_fraud)
+
+
 
 def serve():
     # Create a gRPC server

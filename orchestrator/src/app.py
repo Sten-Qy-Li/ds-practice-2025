@@ -1,3 +1,6 @@
+
+
+
 import sys
 import os
 
@@ -12,14 +15,27 @@ import fraud_detection_pb2_grpc as fraud_detection_grpc
 
 import grpc
 
-def greet(name='you'):
-    # Establish a connection with the fraud-detection gRPC service.
-    with grpc.insecure_channel('fraud_detection:50051') as channel:
-        # Create a stub object.
-        stub = fraud_detection_grpc.HelloServiceStub(channel)
-        # Call the service through the stub object.
-        response = stub.SayHello(fraud_detection.HelloRequest(name=name))
-    return response.greeting
+# def greet(name='you'):
+#     # Establish a connection with the fraud-detection gRPC service.
+#     with grpc.insecure_channel('fraud_detection:50051') as channel:
+#         # Create a stub object.
+#         stub = fraud_detection_grpc.HelloServiceStub(channel)
+#         # Call the service through the stub object.
+#         response = stub.SayHello(fraud_detection.HelloRequest(name=name))
+#     return response.greeting
+
+###### NEW CALL FOR FRAUD DETECTION #####
+def call_fraud_detection(card_number, order_amount):
+    try:
+        with grpc.insecure_channel('fraud_detection:50051') as channel:
+            stub = fraud_detection_grpc.FraudDetectionServiceStub(channel)
+            request_obj = fraud_detection.FraudRequest(card_number)
+            response = stub.CheckFraud(request_obj)
+            return response.is_fraud
+    except Exception as e:
+        logging.error(f"gRPC Call Failed: {e}")
+        return True # Default to fraud if errors
+
 
 # Import Flask.
 # Flask is a web framework for Python.
@@ -56,17 +72,49 @@ def checkout():
     print("Request Data:", request_data.get('items'))
 
     # Dummy response following the provided YAML specification for the bookstore
-    order_status_response = {
-        'orderId': '12345',
-        'status': 'Order Approved',
-        'suggestedBooks': [
-            {'bookId': '123', 'title': 'The Best Book', 'author': 'Author 1'},
-            {'bookId': '456', 'title': 'The Second Best Book', 'author': 'Author 2'}
-        ]
-    }
 
-    return order_status_response
+    # order_status_response = {
+    #     'orderId': '12345',
+    #     'status': 'Order Approved',
+    #     'suggestedBooks': [
+    #         {'bookId': '123', 'title': 'The Best Book', 'author': 'Author 1'},
+    #         {'bookId': '456', 'title': 'The Second Best Book', 'author': 'Author 2'}
+    #     ]
+    # }
 
+    ##### THREADING #####
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    try:
+        logging.info("Orchestrator received order data", extra={"order_data": request_data})
+
+        card_info = request_data.get("creditCard", {})
+        card_number = card_info.get("number", "")
+        order_amount = card_info.get("order_amount", 0.0)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            logging.info("Starting thread for FraudDetection")
+            future_fraud = executor.submit(call_fraud_detection, card_number, c)
+
+            is_fraud = future_fraud.result()
+            logging.info(f"Thread returned fraud status: {is_fraud}")
+
+        order_status_response = {
+            'orderId': '12345',
+            'status': 'Order Denied' if is_fraud else 'Order Approved',
+            'suggestedBooks': [
+                {'bookId': '123', 'title': 'The Best Book', 'author': 'Author 1'},
+                {'bookId': '456', 'title': 'The Second Best Book', 'author': 'Author 2'}
+            ]
+        }
+
+        logging.info("Checkout completed", extra={"order_status_response": order})
+        return order_status_response
+
+    except Exception as e:
+        logging.exception("Checkout endpoint failed")
+        return {"error": str(e)}
 
 if __name__ == '__main__':
     # Run the app in debug mode to enable hot reloading.
